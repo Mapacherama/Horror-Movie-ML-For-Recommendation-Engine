@@ -7,6 +7,9 @@ name = "pypi"
 pandas = "*"
 scikit-learn = "*"
 numpy = "*"
+graphene = "*"
+flask = "*"
+flask-graphql = "*"
 
 [dev-packages]
 

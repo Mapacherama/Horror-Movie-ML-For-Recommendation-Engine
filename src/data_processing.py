@@ -1,31 +1,45 @@
-from flask import Flask, jsonify
 import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
 
-app = Flask(__name__)
+# Load the user-item interaction data
+df = pd.read_csv("cleaned_horror_movie_list_V4.csv")
 
-@app.route('/recommend/<user_id>', methods=['GET'])
-def recommend(user_id):
-    # Load the user-item interaction data
-    df = pd.read_csv("interactions.csv")
+# Extract the features to use for recommendations
+features = ['movie_id', 'title', 'genres', 'cast', 'plot']
+df = df[features]
 
-    # Calculate the average movie rating for each user
-    user_mean = df.groupby(by="user_id")["rating"].mean()
+# Fill any missing values in the data
+df.fillna("", inplace=True)
 
-    # Calculate the average rating for each movie
-    item_mean = df.groupby(by="movie_id")["rating"].mean()
+df['combined_features'] = df.apply(lambda x: x['title'] + " " + x['genres'] + " " + x['cast'] + " " + x['plot'], axis=1)
 
-    # Calculate the deviation of each rating from the mean rating for each user
-    df["user_deviation"] = df["rating"] - user_mean[df["user_id"]]
+# Use TfidfVectorizer to create a matrix of movie feature vectors
+tfidf = TfidfVectorizer(stop_words='english')
+tfidf_matrix = tfidf.fit_transform(df['combined_features'])
 
-    # Calculate the deviation of each rating from the mean rating for each movie
-    df["item_deviation"] = df["rating"] - item_mean[df["movie_id"]]
+# Compute the cosine similarity between each movie
+similarity_matrix = cosine_similarity(tfidf_matrix)
 
-    # Calculate the weighted average of the user deviation and item deviation
-    df["hybrid_rating"] = (df["user_deviation"] + df["item_deviation"]) / 2
+# Convert the similarity matrix into a pandas dataframe
+similarity_df = pd.DataFrame(similarity_matrix, index=df.index, columns=df.index)
 
-    # Sort the ratings in descending order and recommend the top N movies
-    N = 10
-    df = df.sort_values(by="hybrid_rating", ascending=False)
-    recommendations = df.head(N)["movie_id"]
+def get_similar_movies(target_movie_title, N=10):
+    # Create a mapping from movie titles to movie IDs
+    title_to_id = df.set_index("title")["movie_id"]
+    
+    # Get the target movie ID from the title
+    target_movie_id = title_to_id[target_movie_title]
+    
+    # Compute the similarity scores for the target movie based on its title
+    similarity_scores = similarity_df[target_movie_id].sort_values(ascending=False)
+    similar_movies_ids = similarity_scores.index[1:N+1]
+    
+    # Map the similar movie IDs back to their titles
+    similar_movies_titles = df[df["movie_id"].isin(similar_movies_ids)]["title"]
+    
+    return similar_movies_titles
 
-    return jsonify({"recommendations": recommendations})
+# Example usage: get the top 10 most similar movies to the movie with index 0
+top_10 = get_similar_movies('The Visitor (2016)', 10)
+print(top_10)
